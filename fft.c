@@ -62,6 +62,23 @@ void fft(float *input, complex *output, int N) {
         }
     }
 }
+// Computes the inverse DFT (IFFT) of input array `in` of length `N`
+// and stores the result in `out` as real values (assuming original signal was real)
+void ifft(complex *in, float *out, int N) {
+    for (int n = 0; n < N; n++) {
+        float sum_real = 0.0f;
+        float sum_imag = 0.0f,cos_a, sin_a;
+        for (int k = 0; k < N; k++) {
+            float angle = 2.0f * M_PI * k * n / N;
+            cos_a = cosf(angle);
+            sin_a = sinf(angle);
+            sum_real += in[k].r * cos_a - in[k].i * sin_a;
+            sum_imag += in[k].r * sin_a + in[k].i * cos_a;
+        }
+        // Normalize by N
+        out[n] = sum_real / N; // discard small imaginary part if input was from real FFT
+    }
+}
 void fft_process(int16_t *samples, int16_t *output)
 {
     float real[FFT_SIZE];
@@ -73,18 +90,21 @@ void fft_process(int16_t *samples, int16_t *output)
     complex temp[FFT_SIZE];
     // Perform FFT
     fft(real, temp, FFT_SIZE);
-    
+    // Determine bin indices for 300Hz and 10kHz
+    float freq_res = 44000.0f / FFT_SIZE; // Frequency resolution
+    int k_min = (int)((float)LOW_FREQ_CUTOFF / freq_res);
+    int k_max = (int)((float)HIGH_FREQ_CUTOFF / freq_res);
     // Suppress low and high frequencies
     for (int i = 0; i < FFT_SIZE; i++) {
-        if (i < LOW_FREQ_CUTOFF || i > HIGH_FREQ_CUTOFF) {
+        if (i < k_min || i > k_max) {
             temp[i].r = 0;
             temp[i].i = 0;
         }
     }
 
     // Perform IFFT
-    
-
+       
+    ifft(temp, real, FFT_SIZE);
     // Convert back to int16_t
     for (int i = 0; i < FFT_SIZE; i++) {
         output[i] = (int16_t)real[i];
