@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include "esp_log.h"
+#include "fft.h"
 #include "driver/uart.h"
 #include "driver/gpio.h"
 #include "freertos/FreeRTOS.h"
@@ -18,17 +19,18 @@
 #define BAUD_RATE       9600
 #define CHUNK_SIZE      512
 #define INPUT_BUF_SIZE  128
-#define OUTPUT_BUF_SIZE 128 
+// #define OUTPUT_BUF_SIZE 128 
 static const char *TAG = "UART_EVT";
+static const char *TAG1 = "UART_SRL_DATA";
 uint8_t full_data[BUF_SIZE];
 size_t previous_idx=0;
 uint8_t start_flag=0;
 uint8_t inp_buf[CHUNK_SIZE * INPUT_BUF_SIZE];
 size_t inp_head=0;
 size_t inp_tail=0;
-uint8_t out_buf[CHUNK_SIZE * OUTPUT_BUF_SIZE];
-size_t out_head=0;
-size_t out_tail=0;
+// uint8_t out_buf[CHUNK_SIZE * OUTPUT_BUF_SIZE];
+// size_t out_head=0;
+// size_t out_tail=0;
 
 SemaphoreHandle_t inp_mux;
 SemaphoreHandle_t out_mux;
@@ -55,7 +57,12 @@ void uart_event_task(void *pvParameters)
             memcpy(inp_buf + inp_head, data, len);
             inp_head += len;
             inp_head &=((1<<16)-1);
-            ESP_LOGI(TAG, "Read %d bytes from UART", len);}
+            ESP_LOGI(TAG, "Read %d bytes from UART", len);
+            xSemaphoreGive(inp_mux);
+            }
+            }
+            else if (event.type == UART_BREAK) {
+                ESP_LOGW(TAG, "uart rx break");
             }
             else if (event.type == UART_FIFO_OVF) {
                 ESP_LOGW(TAG, "hw fifo overflow");
@@ -75,6 +82,20 @@ void uart_event_task(void *pvParameters)
         }
     }
 }
+void packet_process_task()
+{
+    // Process inp_buf from inp_tail to inp_head
+    uint8_t packet[CHUNK_SIZE], final_packet[CHUNK_SIZE];
+    while(1)
+    {
+        xSemapaphoreTake(inp_mux,portMAX_DELAY);
+        memcpy(packet, inp_buf + inp_tail, CHUNK_SIZE);
+        inp_tail += CHUNK_SIZE;
+        inp_tail &= ((1<<16)-1);
+        fft_process((int16_t *)packet, (int16_t *)final_packet);
+        uart_write_bytes(UART_PORT, final_packet, CHUNK_SIZE);
+    }
+}
 void app_main(void)
 {
     uart_config_t uart_config = {
@@ -90,7 +111,7 @@ void app_main(void)
     ESP_ERROR_CHECK(uart_set_pin(UART_PORT, UART_TX_PIN, UART_RX_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
 
     inp_mux = xSemaphoreCreateCounting(200,0);
-    out_mux = xSemaphoreCreateCounting(200,0);
+    // out_mux = xSemaphoreCreateCounting(200,0);
     xTaskCreatePinnedToCore(uart_event_task,"task_core0",2048,&uart_queue,12,NULL,0);
 
 
