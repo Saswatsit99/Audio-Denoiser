@@ -113,9 +113,10 @@ void app_main(void)
     inp_mux = xSemaphoreCreateCounting(200,0);
     // out_mux = xSemaphoreCreateCounting(200,0);
     xTaskCreatePinnedToCore(uart_event_task,"task_core0",2048,&uart_queue,12,NULL,0);
-    xTaskCreatePinnedToCore(packet_process_task,"task_core1",2048,NULL,12,NULL,1)
+    xTaskCreatePinnedToCore(packet_process_task,"task_core1",2048,NULL,12,NULL,1);
 
 }
+
 
 
 
