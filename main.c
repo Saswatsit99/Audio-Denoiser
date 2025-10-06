@@ -17,8 +17,8 @@
 #define UART_TX_PIN     17
 #define BUF_SIZE        2048
 #define BAUD_RATE       9600
-#define CHUNK_SIZE      512
-#define INPUT_BUF_SIZE  128
+#define CHUNK_SIZE      1U<<9
+#define INPUT_BUF_SIZE  1U<<9
 // #define OUTPUT_BUF_SIZE 128 
 static const char *TAG = "UART_EVT";
 static const char *TAG1 = "UART_SRL_DATA";
@@ -50,13 +50,13 @@ void uart_event_task(void *pvParameters)
                 ESP_LOGE(TAG,"DATA OF UNWANTED SIZE\n");
                 
                 }
-            if((((inp_head + len)&((1<<16) -1 )) - inp_tail)==0){
+            if((((inp_head + len)&((1<<18) -1 )) - inp_tail)==0){
                 ESP_LOGE(TAG,"INPUT BUFFER OVERFLOW\n");
                 }
             else{
             memcpy(inp_buf + inp_head, data, len);
             inp_head += len;
-            inp_head &=((1<<16)-1);
+            inp_head &=((1<<18)-1);
             ESP_LOGI(TAG, "Read %d bytes from UART", len);
             xSemaphoreGive(inp_mux);
             }
@@ -91,7 +91,7 @@ void packet_process_task()
         xSemapaphoreTake(inp_mux,portMAX_DELAY);
         memcpy(packet, inp_buf + inp_tail, CHUNK_SIZE);
         inp_tail += CHUNK_SIZE;
-        inp_tail &= ((1<<16)-1);
+        inp_tail &= ((1<<18)-1);
         fft_process((int16_t *)packet, (int16_t *)final_packet);
         uart_write_bytes(UART_PORT, final_packet, CHUNK_SIZE);
     }
@@ -116,3 +116,4 @@ void app_main(void)
 
 
 }
+
