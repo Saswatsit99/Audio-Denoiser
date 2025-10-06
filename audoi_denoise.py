@@ -1,17 +1,19 @@
 import bluetooth
 import subprocess
-import wave
 import os
 import time
 import threading
+import serial
+import wave
 
 CHUNK_SIZE = 512
-INCOMING_WAV_FILE = "received.wav"
+INCOMING_WAV_FILE = "C:/Users/ASUS/Downloads/received.wav"
 
 def convert_aac_to_wav(aac_path):
     """Convert AAC file to WAV using ffmpeg and return raw PCM bytes."""
     wav_path = "temp.wav"
-    command = ["ffmpeg", "-y", "-i", aac_path, "-ar", "44100", "-ac", "1", wav_path]
+    ffmpeg_path = r"C:\ffmpeg\bin\ffmpeg.exe"  # <-- your actual path to ffmpeg.exe
+    command = [ffmpeg_path, "-y", "-i", aac_path, wav_path]
     subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     with open(wav_path, "rb") as f:
@@ -19,7 +21,6 @@ def convert_aac_to_wav(aac_path):
 
     os.remove(wav_path)
     return wav_data
-
 def send_wav_bt(bt_socket, wav_data):
     """Send WAV data in 512-byte chunks over Bluetooth socket."""
     total = len(wav_data)
@@ -30,36 +31,48 @@ def send_wav_bt(bt_socket, wav_data):
         chunk = wav_data[i:i + CHUNK_SIZE]
         bt_socket.send(chunk)
         sent += len(chunk)
-        time.sleep(0.01)
+        time.sleep(0.02)
         print(f"Sent {sent}/{total} bytes", end='\r')
     print("\n[INFO] Bluetooth transmission complete.")
 
-def receive_wav_bt(bt_socket):
-    """Receive raw bytes over the same Bluetooth socket and save as WAV."""
+def receive_wav_serial():
+    """Receive bytes from COM3 at 115200 bps, write to WAV only between 0xAA and 0xBB."""
+    ser = serial.Serial("COM3", 115200, timeout=0.1)
     frames = []
+    recording = False
 
-    print("[INFO] Listening on Bluetooth for incoming raw bytes...")
+    print("[INFO] Listening on COM3 for incoming raw bytes...")
+
     try:
         while True:
-            bt_socket.settimeout(0.1)
-            try:
-                data = bt_socket.recv(1024)
-                if data:
-                    frames.append(data)
-            except bluetooth.BluetoothError:
+            data = ser.read(1024)
+            if not data:
                 continue
 
+            for byte in data:
+                if byte == 0xAA:
+                    recording = True
+                    continue  # exclude 0xAA
+                elif byte == 0xBB:
+                    recording = False
+                    # Save current frames to WAV
+                    if frames:
+                        with wave.open(INCOMING_WAV_FILE, 'wb') as wf:
+                            wf.setnchannels(1)
+                            wf.setsampwidth(2)  # assuming 16-bit PCM
+                            wf.setframerate(44100)
+                            wf.writeframes(b''.join(frames))
+                        print(f"[INFO] Saved received data to {INCOMING_WAV_FILE}")
+                        frames = []
+                    continue  # exclude 0xBB
+
+                if recording:
+                    frames.append(byte.to_bytes(1, "little"))
+
     except KeyboardInterrupt:
-        print("\n[INFO] Stopped listening, saving WAV...")
-        if frames:
-            with wave.open(INCOMING_WAV_FILE, 'wb') as wf:
-                wf.setnchannels(1)
-                wf.setsampwidth(2)  # assuming 16-bit PCM
-                wf.setframerate(44100)
-                wf.writeframes(b''.join(frames))
-            print(f"[INFO] Saved received data to {INCOMING_WAV_FILE}")
-        else:
-            print("[INFO] No data received.")
+        print("\n[INFO] Stopped listening.")
+    finally:
+        ser.close()
 
 def main():
     # Discover Bluetooth devices
@@ -92,22 +105,24 @@ def main():
 
     wav_data = convert_aac_to_wav(aac_path)
 
-    # Start sending and receiving threads on the same Bluetooth socket
+    # Start sending via Bluetooth
     bt_send_thread = threading.Thread(target=send_wav_bt, args=(bt_socket, wav_data))
-    bt_recv_thread = threading.Thread(target=receive_wav_bt, args=(bt_socket,))
-    bt_recv_thread.daemon = True
-
     bt_send_thread.start()
-    bt_recv_thread.start()
+
+    # Start receiving via COM3
+    serial_recv_thread = threading.Thread(target=receive_wav_serial)
+    serial_recv_thread.daemon = True
+    serial_recv_thread.start()
 
     bt_send_thread.join()
-    print("[INFO] Bluetooth send complete. Receiving will continue until Ctrl+C.")
+    print("[INFO] Bluetooth send complete. Receiving from COM3 will continue until Ctrl+C.")
 
     try:
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
         print("[INFO] Exiting...")
+
     bt_socket.close()
 
 if __name__ == "__main__":
