@@ -49,27 +49,28 @@ void uart_event_task(void *pvParameters)
         // Wait for UART events
         if (xQueueReceive(uart_queue, &event, portMAX_DELAY)) {
             if (event.type == UART_DATA) {
-                len += uart_read_bytes(UART_PORT, data + len, event.size, portMAX_DELAY);
-                ESP_LOGI(TAG, "Read %d bytes from UART", len);
-                if(len<512)
+            len += uart_read_bytes(UART_PORT, data + len, event.size, portMAX_DELAY);
+                //ESP_LOGI(TAG, "Read %d bytes from UART", len);
+            if(len<512)
                 continue;
-                for(int i=0;i<len;i++)
-                {
-                    ESP_LOGI(TAG,"%02X ",data[i]);
-                }
+                //for(int i=0;i<len;i++)
+                //{
+                //    ESP_LOGI(TAG,"%02X ",data[i]);
+                //}
             if(inp_tail<=inp_head)
             free_space = ((1 << 17) - (inp_head - inp_tail));
             else
             free_space = inp_tail - inp_head;
             if (free_space ==0) {
-            ESP_LOGI(TAG,"INPUT BUFFER OVERFLOW\n");
+            //ESP_LOGI(TAG,"INPUT BUFFER OVERFLOW\n");
+                vTaskDelay(pdMS_TO_TICKS(1)); // to avoid busy wait
             }
             else{
             memcpy(inp_buf + inp_head, data, len);
             inp_head += len;
             inp_head &=(( 1 << 17)-1);
             xSemaphoreGive(inp_mux);
-            ESP_LOGI(TAG, "Read %d bytes from UART", len);
+            //ESP_LOGI(TAG, "Read %d bytes from UART", len);
             len=0;
             }
             }
@@ -111,24 +112,20 @@ void packet_process_task(void *arg)
             if (available)
             {
                 // Copy packet from circular buffer with wrapping
-                ESP_LOGI(TAG1, "copying packet ");
+                //ESP_LOGI(TAG1, "copying packet ");
                 memcpy((uint8_t *)packet, inp_buf + inp_tail, CHUNK_SIZE);
 
                 // Update tail
                 inp_tail = (inp_tail + 512) & ((1<<17)-1);
 
                 // Process packet
-                ESP_LOGI(TAG1, "Processing packet");
+                //ESP_LOGI(TAG1, "Processing packet");
                 fft_process(packet, final_packet);
                 // uint8_t *ptr = (uint8_t *)final_packet; 
-                // for(int i=0;i<CHUNK_SIZE;i++)
-                // {
-                //     ESP_LOGI(TAG1,"%02X ",ptr[i]);
-                // }
                 uart_write_bytes(UART_NUM_0, (const char *)&start_byte, 1);
                 uart_write_bytes(UART_NUM_0, (const char *)final_packet, CHUNK_SIZE);
                 uart_write_bytes(UART_NUM_0, (const char *)&end_byte, 1);
-                ESP_LOGI(TAG1, "Packet processed and sent");
+                //ESP_LOGI(TAG1, "Packet processed and sent");
             }
         //xSemaphoreGive(inp_mux);
         // Small delay to avoid tight loop
@@ -154,5 +151,6 @@ void app_main(void)
     xTaskCreatePinnedToCore(packet_process_task,"task_core1",4096,NULL,12,NULL,1);
 
 }
+
 
 
