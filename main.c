@@ -36,6 +36,7 @@ uint8_t start_byte=0xAA;
 uint8_t end_byte=0xBB;
 SemaphoreHandle_t inp_mux;
 SemaphoreHandle_t out_mux;
+SemaphoreHandle_t buf_mutex;
 void uart_event_task(void *pvParameters)
 {
     uart_event_t event;
@@ -102,6 +103,7 @@ void packet_process_task(void *arg)
             // Compute number of bytes available in circular buffer
         if(xSemaphoreTake(inp_mux,portMAX_DELAY)==pdTRUE)
         {
+            xSemaphoreTake(buf_mutex,portMAX_DELAY);
             size_t available;
             if (inp_head >= inp_tail)
                 available = inp_head - inp_tail;
@@ -126,6 +128,7 @@ void packet_process_task(void *arg)
                 uart_write_bytes(UART_NUM_0, (const char *)final_packet, CHUNK_SIZE);
                 uart_write_bytes(UART_NUM_0, (const char *)&end_byte, 1);
                 //ESP_LOGI(TAG1, "Packet processed and sent");
+                xSemaphoreGive(buf_mutex);
             }
         //xSemaphoreGive(inp_mux);
         // Small delay to avoid tight loop
@@ -144,6 +147,7 @@ void app_main(void)
     };
     QueueHandle_t uart_queue;
     inp_mux = xSemaphoreCreateCounting(400,0);
+    buf_mutex = xSemaphoreCreateMutex();
     ESP_ERROR_CHECK(uart_driver_install(UART_PORT, BUF_SIZE, BUF_SIZE, 40, &uart_queue, 0));
     ESP_ERROR_CHECK(uart_param_config(UART_PORT, &uart_config));
     ESP_ERROR_CHECK(uart_set_pin(UART_PORT, UART_TX_PIN, UART_RX_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
@@ -151,6 +155,7 @@ void app_main(void)
     xTaskCreatePinnedToCore(packet_process_task,"task_core1",4096,NULL,12,NULL,1);
 
 }
+
 
 
 
